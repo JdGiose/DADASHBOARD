@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Medical Digital Twin – Persistent Dashboard (V8)</title>
+<title>Medical Digital Twin – Persistent Dashboard (V8) - Supabase Edition</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
 /* -------------------------------------------------
@@ -222,7 +224,7 @@ td {
   <div style="display:flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
     <div>
       <h1 style="margin:0; font-size: 1.5rem;">MEDICAL DIGITAL TWIN</h1>
-      <small>DATABASE PERSISTENCE ENABLED — V8 (PROJECT TRACKING)</small>
+      <small>DATABASE PERSISTENCE ENABLED — V8 (SUPABASE INTEGRATION)</small>
     </div>
 
     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -230,7 +232,7 @@ td {
       <button class="btn btn-grey" onclick="exportJSON()">EXPORT JSON</button>
       <button class="btn btn-grey" onclick="exportCSV()">EXPORT CSV</button>
       <input type="file" id="importFile" onchange="importJSON()" />
-      <button class="btn btn-red" onclick="clearDatabase()">CLEAR ALL</button>
+      <button class="btn btn-red" onclick="clearSupabaseDatabase()">CLEAR ALL</button>
       <button class="btn btn-grey" onclick="togglePersonnelModal(true)">PERSONNEL</button>
       <button class="btn" onclick="addNewJob()">+ ADD JOB</button>
     </div>
@@ -295,59 +297,77 @@ td {
 let jobData = [];
 let personnelList = ["Jarryd", "Joe", "Dominic", "Anna", "Stuart"];
 
-const repoOwner = "JdGiose";
-const repoName = "DADASHBOARD";
-const filePath = "database.json";
-const token = "PASTE_YOUR_GITHUB_TOKEN_HERE";
-const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`;
+// --- SUPABASE CONFIGURATION ---
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY";
+const supabase = typeof supabase !== 'undefined' ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
-async function saveToGitHub(jobData) {
-  const headers = {
-    "Authorization": `Bearer ${token}`,
-    "Accept": "application/vnd.github+json"
-  };
-  const content = btoa(unescape(encodeURIComponent(JSON.stringify(jobData, null, 2))));
-  let sha = null;
-  
+async function saveToSupabase() {
+  if (!supabase) return;
   try {
-    let getFile = await fetch(apiUrl, { headers });
-    if (getFile.status === 200) {
-      let data = await getFile.json();
-      sha = data.sha;
-    }
-    const body = {
-      message: "Auto-save update",
-      content: content,
-      sha: sha
-    };
-    await fetch(apiUrl, { method: "PUT", headers: headers, body: JSON.stringify(body) });
+    // Note: This logic assumes 'id' is the primary key. 
+    // Supabase upsert will insert new rows or update existing based on 'id'.
+    const { error } = await supabase
+      .from('jobs')
+      .upsert(jobData);
+    
+    if (error) throw error;
   } catch (err) {
-    console.error("GitHub Save Error:", err);
+    console.error("Supabase Save Error:", err);
   }
 }
 
-async function loadFromGitHub() {
-  const headers = {
-    "Authorization": `Bearer ${token}`,
-    "Accept": "application/vnd.github+json"
-  };
+async function loadFromSupabase() {
+  if (!supabase) {
+    if (jobData.length === 0) addNewJob();
+    return;
+  }
   try {
-    let response = await fetch(apiUrl, { headers });
-    if (response.status === 200) {
-      let data = await response.json();
-      jobData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      jobData = data;
       reloadTable();
     } else {
       if (jobData.length === 0) addNewJob();
     }
   } catch (err) {
-    console.error("GitHub Load Error:", err);
+    console.error("Supabase Load Error:", err);
     if (jobData.length === 0) addNewJob();
   }
 }
 
+async function deleteFromSupabase(id) {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase
+      .from('jobs')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  } catch (err) {
+    console.error("Supabase Delete Error:", err);
+  }
+}
+
+async function clearSupabaseDatabase() {
+  if (confirm("Delete ALL data from Supabase?")) {
+    if (supabase) {
+      const { error } = await supabase.from('jobs').delete().neq('id', 0); // Deletes everything
+      if (error) console.error("Clear error:", error);
+    }
+    jobData = [];
+    reloadTable();
+  }
+}
+
 window.onload = function() {
-  loadFromGitHub();
+  loadFromSupabase();
   updateKPIs();
 };
 
@@ -388,7 +408,7 @@ function removePerson(name) {
 function addNewJob() {
   const now = new Date();
   const newRow = {
-    id: Date.now(),
+    id: Date.now(), // Acts as bigint timestamp
     refId: "MED-" + Math.random().toString(36).substr(2,5).toUpperCase(),
     projectName: "",
     dateRaised: now.toLocaleDateString("en-GB"),
@@ -400,7 +420,7 @@ function addNewJob() {
   };
   jobData.unshift(newRow); 
   reloadTable();
-  saveToGitHub(jobData);
+  saveToSupabase();
   updateKPIs();
 }
 
@@ -456,7 +476,7 @@ function updateData(index, field, value) {
   jobData[index][field] = value;
   if (field === "projectName") document.getElementById(`sync-project-${index}`).value = value;
   evaluateStatus(index);
-  saveToGitHub(jobData);
+  saveToSupabase();
   updateKPIs();
 }
 
@@ -467,7 +487,7 @@ function updatePersonnel(index) {
   jobData[index].personnel = checked;
   const syncInput = document.getElementById(`sync-staff-${index}`);
   if(syncInput) syncInput.value = checked.join(", ");
-  saveToGitHub(jobData);
+  saveToSupabase();
 }
 
 function evaluateStatus(index) {
@@ -479,7 +499,7 @@ function evaluateStatus(index) {
   if (d.jobDesc.trim() === "") descBox.classList.add("warning");
   else descBox.classList.remove("warning");
 
-  if (d.problemDesc.trim().length > 0) {
+  if (d.problemDesc && d.problemDesc.trim().length > 0) {
     pill.classList.add("status-red"); pill.innerText = "PROBLEM"; d.compDate = "--";
   } else if (d.sopStatus === "OPEN") {
     pill.classList.add("status-yellow"); pill.innerText = "IN WORK"; d.compDate = "--";
@@ -495,8 +515,9 @@ function evaluateStatus(index) {
 
 function deleteRow(index) {
   if (!confirm("Delete this job + issue row?")) return;
+  const targetId = jobData[index].id;
   jobData.splice(index,1);
-  saveToGitHub(jobData);
+  deleteFromSupabase(targetId);
   reloadTable();
 }
 
@@ -515,11 +536,13 @@ function applyFilters() {
       d.jobDesc.toLowerCase().includes(term) || 
       d.refId.toLowerCase().includes(term) || 
       (d.personnel || []).join(", ").toLowerCase().includes(term) || 
-      d.problemDesc.toLowerCase().includes(term) || 
+      (d.problemDesc || "").toLowerCase().includes(term) || 
       d.sopStatus.toLowerCase().includes(term);
     
-    document.getElementById(`job-row-${i}`).style.display = match?"":"none";
-    document.getElementById(`issue-row-${i}`).style.display = match?"":"none";
+    const jRow = document.getElementById(`job-row-${i}`);
+    const iRow = document.getElementById(`issue-row-${i}`);
+    if(jRow) jRow.style.display = match?"":"none";
+    if(iRow) iRow.style.display = match?"":"none";
   });
 }
 
@@ -540,15 +563,17 @@ function columnFilter(type) {
     } else if (type === 'projectName') {
         match = (d.projectName || "").toLowerCase().includes(val);
     }
-    document.getElementById(`job-row-${i}`).style.display = match ? "" : "none";
-    document.getElementById(`issue-row-${i}`).style.display = match ? "" : "none";
+    const jRow = document.getElementById(`job-row-${i}`);
+    const iRow = document.getElementById(`issue-row-${i}`);
+    if(jRow) jRow.style.display = match ? "" : "none";
+    if(iRow) iRow.style.display = match ? "" : "none";
   });
 }
 
 function exportJSON() {
   const blob = new Blob([JSON.stringify(jobData,null,2)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = "MedicalTwin_V8.json"; a.click();
+  const a = document.createElement("a"); a.href = url; a.download = "MedicalTwin_V8_Supabase.json"; a.click();
   URL.revokeObjectURL(url);
 }
 
@@ -556,11 +581,13 @@ function importJSON() {
   const file = document.getElementById("importFile").files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const imported = JSON.parse(e.target.result);
       if (!Array.isArray(imported)) throw new Error('Invalid JSON format');
-      jobData = imported; saveToGitHub(jobData); reloadTable();
+      jobData = imported; 
+      await saveToSupabase(); 
+      reloadTable();
     } catch (err) { alert('Import failed: ' + err.message); }
   };
   reader.readAsText(file);
@@ -578,19 +605,11 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-function clearDatabase() {
-  if (confirm("Delete ALL data on GitHub?")) { 
-    jobData = [];
-    saveToGitHub(jobData);
-    reloadTable();
-  }
-}
-
 function updateKPIs() {
   document.getElementById("kpiTotal").innerText = jobData.length;
-  document.getElementById("kpiOpen").innerText = jobData.filter(d => d.sopStatus==="OPEN" && !d.problemDesc.trim()).length;
-  document.getElementById("kpiProblem").innerText = jobData.filter(d => d.problemDesc.trim().length>0).length;
-  document.getElementById("kpiDone").innerText = jobData.filter(d => d.sopStatus==="SOLVED" && !d.problemDesc.trim()).length;
+  document.getElementById("kpiOpen").innerText = jobData.filter(d => d.sopStatus==="OPEN" && (!d.problemDesc || !d.problemDesc.trim())).length;
+  document.getElementById("kpiProblem").innerText = jobData.filter(d => d.problemDesc && d.problemDesc.trim().length>0).length;
+  document.getElementById("kpiDone").innerText = jobData.filter(d => d.sopStatus==="SOLVED" && (!d.problemDesc || !d.problemDesc.trim())).length;
 }
 </script>
 
