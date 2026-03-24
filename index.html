@@ -301,12 +301,11 @@ let personnelList = ["Jarryd", "Joe", "Dominic", "Anna", "Stuart"];
 const SUPABASE_URL = "https://htborrnoqiuvbvlszdos.supabase.co";
 const SUPABASE_KEY = "sb_publishable_IAtSD7zvmTvamDHA87uijA_7usXI9lX";
 
-// CORRECT INITIALIZATION
-const _supabase = window.supabase.createClient(https://htborrnoqiuvbvlszdos.supabase.co, sb_publishable_IAtSD7zvmTvamDHA87uijA_7usXI9lX);
+// FIXED: Added quotes around variables
+const _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 async function saveToSupabase() {
   try {
-    // MAPPING JS OBJECTS TO SQL COLUMNS
     const payload = jobData.map(j => ({
       id: j.id,
       ref_id: j.refId,
@@ -324,7 +323,6 @@ async function saveToSupabase() {
       .upsert(payload, { onConflict: 'id' });
     
     if (error) throw error;
-    console.log("Save successful");
   } catch (err) {
     console.error("Supabase Save Error:", err);
   }
@@ -340,7 +338,6 @@ async function loadFromSupabase() {
     if (error) throw error;
 
     if (data && data.length > 0) {
-      // MAPPING SQL COLUMNS BACK TO JS OBJECTS
       jobData = data.map(row => ({
         id: row.id,
         refId: row.ref_id,
@@ -348,7 +345,7 @@ async function loadFromSupabase() {
         dateRaised: row.date_raised,
         jobDesc: row.job_desc,
         personnel: row.personnel || [],
-        problemDesc: row.problem_desc,
+        problemDesc: row.problem_desc || "",
         sopStatus: row.sop_status,
         compDate: row.comp_date
       }));
@@ -450,7 +447,7 @@ function renderRow(data, index) {
       <input type="text" class="owner-sync read-only" id="sync-project-${index}" readonly value="${escapeHTML(data.projectName || '')}">
     </td>
     <td><input type="text" class="owner-sync read-only" id="sync-staff-${index}" readonly value="${escapeHTML((data.personnel || []).join(", "))}"></td>
-    <td><textarea class="job-input" oninput="updateData(${index}, 'problemDesc', this.value)">${escapeHTML(data.problemDesc)}</textarea></td>
+    <td><textarea class="job-input" oninput="updateData(${index}, 'problemDesc', this.value)">${escapeHTML(data.problemDesc || '')}</textarea></td>
     <td>
       <select class="job-input" onchange="updateData(${index}, 'sopStatus', this.value)">
         <option value="OPEN" ${data.sopStatus==="OPEN"?"selected":""}>OPEN</option>
@@ -470,7 +467,10 @@ function escapeHTML(str) {
 
 function updateData(index, field, value) {
   jobData[index][field] = value;
-  if (field === "projectName") document.getElementById(`sync-project-${index}`).value = value;
+  if (field === "projectName") {
+    const sync = document.getElementById(`sync-project-${index}`);
+    if(sync) sync.value = value;
+  }
   evaluateStatus(index);
   saveToSupabase();
   updateKPIs();
@@ -490,6 +490,8 @@ function evaluateStatus(index) {
   const d = jobData[index];
   const pill = document.getElementById(`status-pill-${index}`);
   const dateDiv = document.getElementById(`comp-date-${index}`);
+  if(!pill) return;
+  
   pill.classList.remove("status-red","status-yellow","status-green");
   const descBox = document.querySelector(`#job-row-${index} .job-input`);
   if (d.jobDesc.trim() === "") descBox.classList.add("warning");
@@ -506,7 +508,7 @@ function evaluateStatus(index) {
       d.compDate = now.toLocaleDateString("en-GB") + " " + now.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
     }
   }
-  dateDiv.innerText = d.compDate;
+  if(dateDiv) dateDiv.innerText = d.compDate;
 }
 
 async function deleteRow(index) {
@@ -626,10 +628,20 @@ async function clearDatabase() {
 }
 
 function updateKPIs() {
-  document.getElementById("kpiTotal").innerText = jobData.length;
-  document.getElementById("kpiOpen").innerText = jobData.filter(d => d.sopStatus==="OPEN" && (!d.problemDesc || !d.problemDesc.trim())).length;
-  document.getElementById("kpiProblem").innerText = jobData.filter(d => d.problemDesc && d.problemDesc.trim().length>0).length;
-  document.getElementById("kpiDone").innerText = jobData.filter(d => d.sopStatus==="SOLVED" && (!d.problemDesc || !d.problemDesc.trim())).length;
+  const kpiT = document.getElementById("kpiTotal");
+  if(kpiT) kpiT.innerText = jobData.length;
+  
+  const inWork = jobData.filter(d => d.sopStatus==="OPEN" && (!d.problemDesc || !d.problemDesc.trim())).length;
+  const kpiO = document.getElementById("kpiOpen");
+  if(kpiO) kpiO.innerText = inWork;
+  
+  const problems = jobData.filter(d => d.problemDesc && d.problemDesc.trim().length>0).length;
+  const kpiP = document.getElementById("kpiProblem");
+  if(kpiP) kpiP.innerText = problems;
+  
+  const done = jobData.filter(d => d.sopStatus==="SOLVED" && (!d.problemDesc || !d.problemDesc.trim())).length;
+  const kpiD = document.getElementById("kpiDone");
+  if(kpiD) kpiD.innerText = done;
 }
 </script>
 
