@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Medical Digital Twin – Persistent Dashboard (V8)</title>
+
+<style>
+/* -------------------------------------------------
+   THEME / COLORS
+------------------------------------------------- */
+:root {
+  --med-blue: #005eb8;
+  --light-bg: #f8fafc;
+  --border-color: #cbd5e1;
+  --status-red: #ef4444;
+  --status-yellow: #f59e0b;
+  --status-green: #10b981;
+  --warning: #fff7ed; /* soft amber */
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background-color: var(--light-bg);
+  padding: 20px;
+  color: #1e293b;
+}
+
+.header-section {
+  background: white;
+  padding: 20px;
+  border-bottom: 4px solid var(--med-blue);
+  margin-bottom: 25px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.section-label {
+  font-weight: bold;
+  color: var(--med-blue);
+  margin-bottom: 10px;
+  display: block;
+  text-transform: uppercase;
+}
+
+.controls-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex-grow: 1;
+  padding: 10px;
+  border: 2px solid var(--med-blue);
+  border-radius: 4px;
+}
+
+/* Buttons */
+.btn {
+  background-color: var(--med-blue);
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  white-space: nowrap;
+}
+.btn-grey { background-color: #64748b; }
+.btn-green { background-color: #0d9488; }
+.btn-red { background-color: #dc2626; }
+
+/* -------------------------------------------------
+   KPI BAR
+------------------------------------------------- */
+.kpi-bar {
+  display: flex;
+  gap: 20px;
+  background: white;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 25px;
+  border-radius: 6px;
+}
+.kpi-box { flex: 1; text-align: center; padding: 10px 0; }
+.kpi-number { font-size: 1.4rem; font-weight: bold; color: var(--med-blue); }
+
+/* -------------------------------------------------
+   TABLES & FIELDS
+------------------------------------------------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  margin-bottom: 40px;
+}
+th {
+  background-color: #f1f5f9;
+  color: var(--med-blue);
+  text-align: left;
+  padding: 12px;
+  border-bottom: 2px solid var(--border-color);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  position: relative;
+}
+
+/* Filter Styles */
+.filter-icon {
+  cursor: pointer;
+  margin-left: 5px;
+  font-size: 0.8rem;
+}
+
+td {
+  padding: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+
+.job-input, .owner-sync {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+.read-only { background-color: #f8fafc; color: #64748b; }
+
+/* Checkbox container style */
+.checkbox-group {
+  max-height: 80px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  padding: 5px;
+  border-radius: 4px;
+  background: #fff;
+}
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  font-size: 0.8rem;
+  margin-bottom: 2px;
+}
+.checkbox-item input { margin-right: 8px; }
+
+.status-pill {
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: white;
+  text-align: center;
+  display: block;
+  text-transform: uppercase;
+}
+.status-red { background-color: var(--status-red); }
+.status-yellow { background-color: var(--status-yellow); }
+.status-green { background-color: var(--status-green); }
+
+.warning {
+  background-color: var(--warning);
+  border-color: var(--status-red);
+}
+
+.del-btn {
+  background: #dc2626;
+  color: white;
+  font-weight: bold;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+/* MODAL FOR PERSONNEL */
+#personnelModal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0; top: 0; width: 100%; height: 100%;
+  background-color: rgba(0,0,0,0.5);
+}
+.modal-content {
+  background-color: white;
+  margin: 10% auto;
+  padding: 20px;
+  width: 300px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+.personnel-list-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid #eee;
+}
+
+@media (max-width: 900px) {
+  table { display: block; overflow-x: auto; }
+}
+
+@media print {
+  .btn, .controls-row, #globalSearch, #importFile, .del-btn, .kpi-bar, .filter-icon, #personnelModal {
+    display: none !important;
+  }
+  body { padding: 0; background: white; }
+  table { page-break-inside: avoid; }
+  textarea, input, select {
+    border: none !important;
+    background: none !important;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<div class="header-section">
+  <div style="display:flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+    <div>
+      <h1 style="margin:0; font-size: 1.5rem;">MEDICAL DIGITAL TWIN</h1>
+      <small>DATABASE PERSISTENCE ENABLED — V8 (PROJECT TRACKING)</small>
+    </div>
+
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      <button class="btn btn-green" onclick="window.print()">PRINT / PDF</button>
+      <button class="btn btn-grey" onclick="exportJSON()">EXPORT JSON</button>
+      <button class="btn btn-grey" onclick="exportCSV()">EXPORT CSV</button>
+      <input type="file" id="importFile" onchange="importJSON()" />
+      <button class="btn btn-red" onclick="clearDatabase()">CLEAR ALL</button>
+      <button class="btn btn-grey" onclick="togglePersonnelModal(true)">PERSONNEL</button>
+      <button class="btn" onclick="addNewJob()">+ ADD JOB</button>
+    </div>
+  </div>
+
+  <div class="controls-row">
+    <input type="text" id="globalSearch" class="search-input"
+      placeholder="Search Project, Description, ID, or Personnel..." onkeyup="applyFilters()">
+  </div>
+</div>
+
+<div class="kpi-bar" id="kpiBar">
+  <div class="kpi-box"><div class="kpi-number" id="kpiTotal">0</div>Total Jobs</div>
+  <div class="kpi-box"><div class="kpi-number" id="kpiOpen">0</div>In Work</div>
+  <div class="kpi-box"><div class="kpi-number" id="kpiProblem">0</div>Problem</div>
+  <div class="kpi-box"><div class="kpi-number" id="kpiDone">0</div>Completed</div>
+</div>
+
+<span class="section-label">Section 1: Job List</span>
+<table id="jobTable">
+<thead>
+<tr>
+  <th style="width:100px;">STATUS <span class="filter-icon" onclick="columnFilter('status')">🔍</span></th>
+  <th style="width:150px;">PROJECT <span class="filter-icon" onclick="columnFilter('projectName')">🔍</span></th>
+  <th>JOB DESCRIPTION</th>
+  <th style="width:200px;">PERSONNEL <span class="filter-icon" onclick="columnFilter('personnel')">🔍</span></th>
+  <th style="width:180px;">DATE & REF ID <span class="filter-icon" onclick="columnFilter('refId')">🔍</span></th>
+  <th style="width:60px;">DEL</th>
+</tr>
+</thead>
+<tbody id="jobBody"></tbody>
+</table>
+
+<span class="section-label">Section 2: Problem Tracking</span>
+<table id="issueTable">
+<thead>
+<tr>
+  <th style="width:180px;">REF / PROJECT</th>
+  <th style="width:200px;">OWNERS</th>
+  <th>PROBLEM DESCRIPTION</th>
+  <th style="width:130px;">SOP STATUS</th>
+  <th style="width:150px;">DATE COMPLETED</th>
+  <th style="width:60px;">DEL</th>
+</tr>
+</thead>
+<tbody id="issueBody"></tbody>
+</table>
+
+<div id="personnelModal">
+  <div class="modal-content">
+    <h3 style="margin-top:0;">Manage Personnel</h3>
+    <div id="modalList" style="margin-bottom:15px; max-height:200px; overflow-y:auto;"></div>
+    <div style="display:flex; gap:5px;">
+      <input type="text" id="newPersonName" placeholder="Name..." style="flex-grow:1; padding:5px;">
+      <button class="btn btn-green" onclick="addPerson()" style="padding:5px 10px;">ADD</button>
+    </div>
+    <button class="btn btn-grey" onclick="togglePersonnelModal(false)" style="width:100%; margin-top:10px;">CLOSE</button>
+  </div>
+</div>
+
+<script>
+let jobData = [];
+let personnelList = ["Jarryd", "Joe", "Dominic", "Anna", "Stuart"];
+
+const repoOwner = "JdGiose";
+const repoName = "DADASHBOARD";
+const filePath = "database.json";
+const token = "PASTE_YOUR_GITHUB_TOKEN_HERE";
+const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`;
+
+async function saveToGitHub(jobData) {
+  const headers = {
+    "Authorization": `Bearer ${token}`,
+    "Accept": "application/vnd.github+json"
+  };
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(jobData, null, 2))));
+  let sha = null;
+  
+  try {
+    let getFile = await fetch(apiUrl, { headers });
+    if (getFile.status === 200) {
+      let data = await getFile.json();
+      sha = data.sha;
+    }
+    const body = {
+      message: "Auto-save update",
+      content: content,
+      sha: sha
+    };
+    await fetch(apiUrl, { method: "PUT", headers: headers, body: JSON.stringify(body) });
+  } catch (err) {
+    console.error("GitHub Save Error:", err);
+  }
+}
+
+async function loadFromGitHub() {
+  const headers = {
+    "Authorization": `Bearer ${token}`,
+    "Accept": "application/vnd.github+json"
+  };
+  try {
+    let response = await fetch(apiUrl, { headers });
+    if (response.status === 200) {
+      let data = await response.json();
+      jobData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+      reloadTable();
+    } else {
+      if (jobData.length === 0) addNewJob();
+    }
+  } catch (err) {
+    console.error("GitHub Load Error:", err);
+    if (jobData.length === 0) addNewJob();
+  }
+}
+
+window.onload = function() {
+  loadFromGitHub();
+  updateKPIs();
+};
+
+/* PERSONNEL MODAL LOGIC */
+function togglePersonnelModal(show) {
+  const modal = document.getElementById("personnelModal");
+  modal.style.display = show ? "block" : "none";
+  if (show) renderModalList();
+}
+
+function renderModalList() {
+  const listDiv = document.getElementById("modalList");
+  listDiv.innerHTML = personnelList.map(p => `
+    <div class="personnel-list-item">
+      <span>${p}</span>
+      <span style="color:red; cursor:pointer; font-weight:bold;" onclick="removePerson('${p}')">X</span>
+    </div>
+  `).join("");
+}
+
+function addPerson() {
+  const input = document.getElementById("newPersonName");
+  const name = input.value.trim();
+  if (name && !personnelList.includes(name)) {
+    personnelList.push(name);
+    input.value = "";
+    renderModalList();
+    reloadTable();
+  }
+}
+
+function removePerson(name) {
+  personnelList = personnelList.filter(p => p !== name);
+  renderModalList();
+  reloadTable();
+}
+
+function addNewJob() {
+  const now = new Date();
+  const newRow = {
+    id: Date.now(),
+    refId: "MED-" + Math.random().toString(36).substr(2,5).toUpperCase(),
+    projectName: "",
+    dateRaised: now.toLocaleDateString("en-GB"),
+    jobDesc: "",
+    personnel: [],
+    problemDesc: "",
+    sopStatus: "OPEN",
+    compDate: "--"
+  };
+  jobData.unshift(newRow); 
+  reloadTable();
+  saveToGitHub(jobData);
+  updateKPIs();
+}
+
+function renderRow(data, index) {
+  const jobRow = document.createElement("tr");
+  jobRow.id = `job-row-${index}`;
+  
+  const personnelCheckboxes = personnelList.map(p => `
+    <div class="checkbox-item">
+      <input type="checkbox" value="${p}" ${data.personnel && data.personnel.includes(p) ? "checked" : ""} 
+             onchange="updatePersonnel(${index})">
+      <label>${p}</label>
+    </div>
+  `).join("");
+
+  jobRow.innerHTML = `
+    <td><span id="status-pill-${index}" class="status-pill"></span></td>
+    <td><input type="text" class="job-input" oninput="updateData(${index}, 'projectName', this.value)" value="${escapeHTML(data.projectName || '')}" placeholder="Project Name"></td>
+    <td><input type="text" class="job-input" oninput="updateData(${index}, 'jobDesc', this.value)" value="${escapeHTML(data.jobDesc)}"></td>
+    <td><div class="checkbox-group" id="check-group-${index}">${personnelCheckboxes}</div></td>
+    <td style="font-size:0.8rem;"><strong>ID:</strong> ${escapeHTML(data.refId)}<br><strong>DATE:</strong> ${escapeHTML(data.dateRaised)}</td>
+    <td><button class="del-btn" onclick="deleteRow(${index})">X</button></td>
+  `;
+  document.getElementById("jobBody").appendChild(jobRow);
+
+  const issueRow = document.createElement("tr");
+  issueRow.id = `issue-row-${index}`;
+  issueRow.innerHTML = `
+    <td>
+      <div style="font-size:0.7rem; font-weight:bold; color:var(--med-blue);">${escapeHTML(data.refId)}</div>
+      <input type="text" class="owner-sync read-only" id="sync-project-${index}" readonly value="${escapeHTML(data.projectName || '')}">
+    </td>
+    <td><input type="text" class="owner-sync read-only" id="sync-staff-${index}" readonly value="${escapeHTML((data.personnel || []).join(", "))}"></td>
+    <td><textarea class="job-input" oninput="updateData(${index}, 'problemDesc', this.value)">${escapeHTML(data.problemDesc)}</textarea></td>
+    <td>
+      <select class="job-input" onchange="updateData(${index}, 'sopStatus', this.value)">
+        <option value="OPEN" ${data.sopStatus==="OPEN"?"selected":""}>OPEN</option>
+        <option value="SOLVED" ${data.sopStatus==="SOLVED"?"selected":""}>SOLVED</option>
+      </select>
+    </td>
+    <td><div id="comp-date-${index}" style="font-size:0.75rem;">${escapeHTML(data.compDate)}</div></td>
+    <td><button class="del-btn" onclick="deleteRow(${index})">X</button></td>
+  `;
+  document.getElementById("issueBody").appendChild(issueRow);
+  evaluateStatus(index);
+}
+
+function escapeHTML(str) {
+  return String(str).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+}
+
+function updateData(index, field, value) {
+  jobData[index][field] = value;
+  if (field === "projectName") document.getElementById(`sync-project-${index}`).value = value;
+  evaluateStatus(index);
+  saveToGitHub(jobData);
+  updateKPIs();
+}
+
+function updatePersonnel(index) {
+  const container = document.getElementById(`check-group-${index}`);
+  if(!container) return;
+  const checked = Array.from(container.querySelectorAll('input:checked')).map(i => i.value);
+  jobData[index].personnel = checked;
+  const syncInput = document.getElementById(`sync-staff-${index}`);
+  if(syncInput) syncInput.value = checked.join(", ");
+  saveToGitHub(jobData);
+}
+
+function evaluateStatus(index) {
+  const d = jobData[index];
+  const pill = document.getElementById(`status-pill-${index}`);
+  const dateDiv = document.getElementById(`comp-date-${index}`);
+  pill.classList.remove("status-red","status-yellow","status-green");
+  const descBox = document.querySelector(`#job-row-${index} .job-input`);
+  if (d.jobDesc.trim() === "") descBox.classList.add("warning");
+  else descBox.classList.remove("warning");
+
+  if (d.problemDesc.trim().length > 0) {
+    pill.classList.add("status-red"); pill.innerText = "PROBLEM"; d.compDate = "--";
+  } else if (d.sopStatus === "OPEN") {
+    pill.classList.add("status-yellow"); pill.innerText = "IN WORK"; d.compDate = "--";
+  } else {
+    pill.classList.add("status-green"); pill.innerText = "COMPLETED";
+    if (d.compDate === "--") {
+      const now = new Date();
+      d.compDate = now.toLocaleDateString("en-GB") + " " + now.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+    }
+  }
+  dateDiv.innerText = d.compDate;
+}
+
+function deleteRow(index) {
+  if (!confirm("Delete this job + issue row?")) return;
+  jobData.splice(index,1);
+  saveToGitHub(jobData);
+  reloadTable();
+}
+
+function reloadTable() {
+  document.getElementById("jobBody").innerHTML = "";
+  document.getElementById("issueBody").innerHTML = "";
+  jobData.forEach((d,i)=>renderRow(d,i));
+  updateKPIs();
+}
+
+function applyFilters() {
+  const term = document.getElementById("globalSearch").value.toLowerCase();
+  jobData.forEach((d,i)=>{
+    const match = 
+      (d.projectName || "").toLowerCase().includes(term) ||
+      d.jobDesc.toLowerCase().includes(term) || 
+      d.refId.toLowerCase().includes(term) || 
+      (d.personnel || []).join(", ").toLowerCase().includes(term) || 
+      d.problemDesc.toLowerCase().includes(term) || 
+      d.sopStatus.toLowerCase().includes(term);
+    
+    document.getElementById(`job-row-${i}`).style.display = match?"":"none";
+    document.getElementById(`issue-row-${i}`).style.display = match?"":"none";
+  });
+}
+
+function columnFilter(type) {
+  const rawInput = prompt(`Enter ${type} to filter by:`);
+  if (rawInput === null) return; 
+  const val = rawInput.toLowerCase();
+  
+  jobData.forEach((d,i) => {
+    let match = false;
+    if(type === 'status') {
+        const pillText = document.getElementById(`status-pill-${i}`).innerText.toLowerCase();
+        match = pillText.includes(val);
+    } else if (type === 'personnel') {
+        match = (d.personnel || []).join(" ").toLowerCase().includes(val);
+    } else if (type === 'refId') {
+        match = d.refId.toLowerCase().includes(val);
+    } else if (type === 'projectName') {
+        match = (d.projectName || "").toLowerCase().includes(val);
+    }
+    document.getElementById(`job-row-${i}`).style.display = match ? "" : "none";
+    document.getElementById(`issue-row-${i}`).style.display = match ? "" : "none";
+  });
+}
+
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(jobData,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = "MedicalTwin_V8.json"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importJSON() {
+  const file = document.getElementById("importFile").files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!Array.isArray(imported)) throw new Error('Invalid JSON format');
+      jobData = imported; saveToGitHub(jobData); reloadTable();
+    } catch (err) { alert('Import failed: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+
+function exportCSV() {
+  let csv = "RefID,Project,Date,JobDesc,Personnel,ProblemDesc,SOP,Completion\n";
+  jobData.forEach(row=>{
+    const line = [row.refId, row.projectName || "", row.dateRaised, row.jobDesc, (row.personnel || []).join(";"), row.problemDesc, row.sopStatus, row.compDate].map(v => '"' + String(v).replaceAll('"', '""') + '"').join(',');
+    csv += line + "\n";
+  });
+  const blob = new Blob([csv],{type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href=url; a.download="MedicalTwin_V8.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function clearDatabase() {
+  if (confirm("Delete ALL data on GitHub?")) { 
+    jobData = [];
+    saveToGitHub(jobData);
+    reloadTable();
+  }
+}
+
+function updateKPIs() {
+  document.getElementById("kpiTotal").innerText = jobData.length;
+  document.getElementById("kpiOpen").innerText = jobData.filter(d => d.sopStatus==="OPEN" && !d.problemDesc.trim()).length;
+  document.getElementById("kpiProblem").innerText = jobData.filter(d => d.problemDesc.trim().length>0).length;
+  document.getElementById("kpiDone").innerText = jobData.filter(d => d.sopStatus==="SOLVED" && !d.problemDesc.trim()).length;
+}
+</script>
+
+</body>
+</html>
